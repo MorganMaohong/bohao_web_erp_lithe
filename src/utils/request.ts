@@ -2,7 +2,7 @@ import axios, { type AxiosRequestConfig, type AxiosResponse, type InternalAxiosR
 import { createDiscreteApi } from 'naive-ui'
 
 import { requestEventBus } from '@/event-bus'
-import { removeToken, getToken } from '@/utils/cache/cookies'
+import { getToken } from '@/utils/cache/cookies'
 
 const { message } = createDiscreteApi(['message'])
 
@@ -48,8 +48,7 @@ axiosInstance.interceptors.response.use(
       }
 
       if (code === 501) {
-        removeToken()
-        message.error('登录失效，请重新登录')
+        requestEventBus.emit({ type: 'unauthorized', code })
         return Promise.reject(new Error(msg || 'Unauthorized'))
       }
 
@@ -68,8 +67,7 @@ axiosInstance.interceptors.response.use(
     const code = error.response?.data?.code
     requestEventBus.emit({ type: 'responseError', error, code })
     if (code === 501) {
-      removeToken()
-      message.error('登录失效，请重新登录')
+      requestEventBus.emit({ type: 'unauthorized', code })
     } else {
       message.error(error.response?.data?.msg || '服务器异常，请稍后再试')
     }

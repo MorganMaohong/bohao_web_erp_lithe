@@ -2,12 +2,18 @@ import CacheKey from '@/constants/cache-key'
 
 const TOKEN_QUERY_KEYS = ['accessToken', 'token', 'x-token']
 const TOKEN_COOKIE_PATH = '/'
-const LEGACY_TOKEN_KEYS = ['x-token', 'erp-x-token']
+const LEGACY_TOKEN_KEYS = ['x-token', 'erp-x-token', 'erplite-x-token']
 
 function normalizeToken(token?: string | null) {
   if (!token) return ''
   const value = token.trim()
   return value && value !== 'undefined' && value !== 'null' ? value : ''
+}
+
+function readCookieToken(key: string) {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${escaped}=([^;]*)`))
+  return normalizeToken(match?.[1] ? decodeURIComponent(match[1]) : '')
 }
 
 function readTokenFromUrl() {
@@ -61,17 +67,40 @@ function removeTokenFromUrl() {
 
 function clearLegacyStorage() {
   LEGACY_TOKEN_KEYS.forEach((key) => {
+    if (key === CacheKey.TOKEN) return
     document.cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=${TOKEN_COOKIE_PATH}`
     localStorage.removeItem(key)
     sessionStorage.removeItem(key)
   })
 }
 
+function readLegacyToken() {
+  for (const key of LEGACY_TOKEN_KEYS) {
+    const fromStorage =
+      normalizeToken(localStorage.getItem(key)) || normalizeToken(sessionStorage.getItem(key))
+    if (fromStorage) return fromStorage
+
+    const fromCookie = readCookieToken(key)
+    if (fromCookie) return fromCookie
+  }
+  return ''
+}
+
+export function migrateLegacyTokenStorage() {
+  if (getToken()) return ''
+
+  const legacyToken = readLegacyToken()
+  if (!legacyToken) return ''
+
+  const rememberMe = LEGACY_TOKEN_KEYS.some((key) => Boolean(localStorage.getItem(key)))
+  setToken(legacyToken, rememberMe)
+  return legacyToken
+}
+
 export const getToken = () => {
   return (
     normalizeToken(localStorage.getItem(CacheKey.TOKEN)) ||
     normalizeToken(sessionStorage.getItem(CacheKey.TOKEN)) ||
-    LEGACY_TOKEN_KEYS.map((key) => normalizeToken(localStorage.getItem(key)) || normalizeToken(sessionStorage.getItem(key))).find(Boolean) ||
     ''
   )
 }
@@ -103,4 +132,11 @@ export const bootstrapTokenFromUrl = () => {
   setToken(token, true)
   removeTokenFromUrl()
   return token
+}
+
+/** URL SSO + 旧版 erp token 迁移，返回当前有效 token */
+export function syncBootstrapSession() {
+  migrateLegacyTokenStorage()
+  const urlToken = bootstrapTokenFromUrl()
+  return urlToken || getToken()
 }

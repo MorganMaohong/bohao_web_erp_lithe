@@ -14,7 +14,7 @@ import CacheKey from '@/constants/cache-key'
 import router from '@/router'
 import { resolveMenu, resolveRoute } from '@/router/helper'
 import { adaptLegacyMenus } from '@/router/legacy-menu'
-import { getToken, removeToken, setToken } from '@/utils/cache/cookies'
+import { getToken, removeToken, setToken, syncBootstrapSession } from '@/utils/cache/cookies'
 
 import { useTabsStore } from './tabs'
 import { pinia } from '.'
@@ -169,6 +169,20 @@ export const useUserStore = defineStore('userStore', () => {
   const userMenu = computed(() => resolveMenu(effectiveMenu.value))
   const userRoute = computed(() => resolveRoute(effectiveMenu.value))
 
+  function resolveHomePath(homePaths: Array<string | undefined>, fallbackPath: string) {
+    const candidates = [...homePaths, fallbackPath, '/dashboard'].filter((item): item is string => Boolean(item))
+
+    for (const path of candidates) {
+      const routeResolved = router.resolve(path)
+      const hasNon404Match = routeResolved.matched.some((route) => route.name !== '404')
+      if (hasNon404Match) {
+        return path
+      }
+    }
+
+    return fallbackPath || '/dashboard'
+  }
+
   const homePath = computed(() => {
     if (effectiveMenu.value.some((item) => 'path' in item && item.path === '/dashboard')) {
       return '/dashboard'
@@ -180,16 +194,20 @@ export const useUserStore = defineStore('userStore', () => {
       ...effectiveMenu.value.map((item) => ('path' in item ? item.path : '')),
     ]
 
-    const resolvedPath = candidates
-      .map((item) => normalizeLandingPath(item))
-      .find((item) => Boolean(item))
-
-    return resolvedPath || '/dashboard'
+    return resolveHomePath(candidates.map((item) => normalizeLandingPath(item)), '/dashboard')
   })
 
   const hasUserProfile = computed(() => {
     return Boolean(legacyUserInfo.value.username || legacyUserInfo.value.menuList?.length)
   })
+
+  function syncSessionToken() {
+    const nextToken = syncBootstrapSession()
+    if (nextToken) {
+      token.value = nextToken
+    }
+    return nextToken
+  }
 
   return {
     user,
@@ -206,6 +224,7 @@ export const useUserStore = defineStore('userStore', () => {
     userSignIn,
     userSignOut,
     cleanup,
+    syncSessionToken,
   }
 })
 
